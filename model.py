@@ -3,19 +3,23 @@ from torch import nn
 import numpy as np
 import torch.nn.functional as F
 
+
 def l2_norm(x):
     if len(x.shape):
-        x = x.reshape((x.shape[0],-1))
+        x = x.reshape((x.shape[0], -1))
     return F.normalize(x, p=2, dim=1)
 
 
 def get_distance(x):
     _x = x.detach()
     sim = torch.matmul(_x, _x.t())
-    dist = 2 - 2*sim
-    dist += torch.eye(dist.shape[0]).to(dist.device)   # maybe dist += torch.eye(dist.shape[0]).to(dist.device)*1e-8
-    dist = dist.sqrt()
-    return dist
+    p_norm = torch.sum(_x**2, dim=1, keepdim=True)
+    c_norm = p_norm.t()
+    dists = -2 * sim + p_norm + c_norm
+    dists += torch.eye(dists.shape[0]).to(dists.device)
+    dists = dists.clamp(min=1e-8)
+    dists = dists.sqrt()
+    return dists
 
 
 class MarginNet(nn.Module):
@@ -41,7 +45,7 @@ class MarginNet(nn.Module):
     Outputs:
         - The output of DistanceWeightedSampling.
     """
-    
+
     def __init__(self, base_net, emb_dim, batch_k, feat_dim=None, normalize=False):
         super(MarginNet, self).__init__()
         self.base_net = base_net
@@ -56,7 +60,7 @@ class MarginNet(nn.Module):
         self.normalize = l2_norm
         self.sampled = DistanceWeightedSampling(batch_k=batch_k, normalize=normalize)
 
-    def forward(self,x):
+    def forward(self, x):
         x = self.base_net(x)
         x = self.dense(x)
         x = self.normalize(x)
@@ -73,13 +77,13 @@ class MarginLoss(nn.Module):
     def forward(self, anchors, positives, negatives, beta_in, a_indices=None):
         if a_indices is not None:
             beta = beta_in[a_indices]
-            beta_reg_loss =  torch.sum(beta)*self._nu
+            beta_reg_loss = torch.sum(beta) * self._nu
         else:
             beta = beta_in
             beta_reg_loss = 0.0
 
-        d_ap = torch.sqrt(torch.sum((positives - anchors)**2, dim=1) +1e-8)
-        d_an = torch.sqrt(torch.sum((negatives - anchors)**2, dim=1) +1e-8)
+        d_ap = torch.sqrt(torch.sum((positives - anchors) ** 2, dim=1) + 1e-8)
+        d_an = torch.sqrt(torch.sum((negatives - anchors) ** 2, dim=1) + 1e-8)
 
         pos_loss = torch.clamp(d_ap - beta + self._margin, min=0.0)
         neg_loss = torch.clamp(beta - d_an + self._margin, min=0.0)
@@ -90,7 +94,7 @@ class MarginLoss(nn.Module):
         return loss, pair_cnt
 
 
-class   DistanceWeightedSampling(nn.Module):
+class DistanceWeightedSampling(nn.Module):
     '''
     parameters
     ----------
@@ -111,8 +115,8 @@ class   DistanceWeightedSampling(nn.Module):
 
     '''
 
-    def __init__(self, batch_k, cutoff=0.5, nonzero_loss_cutoff=1.4, normalize =False,  **kwargs):
-        super(DistanceWeightedSampling,self).__init__()
+    def __init__(self, batch_k, cutoff=0.5, nonzero_loss_cutoff=1.4, normalize=False, **kwargs):
+        super(DistanceWeightedSampling, self).__init__()
         self.batch_k = batch_k
         self.cutoff = cutoff
         self.nonzero_loss_cutoff = nonzero_loss_cutoff
@@ -123,7 +127,8 @@ class   DistanceWeightedSampling(nn.Module):
         n, d = x.shape
         distance = get_distance(x)
         distance = distance.clamp(min=self.cutoff)
-        log_weights = ((2.0 - float(d)) * distance.log() - (float(d-3)/2)*torch.log(torch.clamp(1.0 - 0.25*(distance*distance), min=1e-8)))
+        log_weights = ((2.0 - float(d)) * distance.log() - (float(d - 3) / 2) * torch.log(
+            torch.clamp(1.0 - 0.25 * (distance * distance), min=1e-8)))
 
         if self.normalize:
             log_weights = (log_weights - log_weights.min()) / (log_weights.max() - log_weights.min() + 1e-8)
@@ -134,12 +139,12 @@ class   DistanceWeightedSampling(nn.Module):
             weights = weights.to(x.device)
 
         mask = torch.ones_like(weights)
-        for i in range(0,n,k):
-            mask[i:i+k, i:i+k] = 0
+        for i in range(0, n, k):
+            mask[i:i + k, i:i + k] = 0
 
-        mask_uniform_probs = mask.double() *(1.0/(n-k))
+        mask_uniform_probs = mask.double() * (1.0 / (n - k))
 
-        weights = weights*mask*((distance < self.nonzero_loss_cutoff).float()) + 1e-8
+        weights = weights * mask * ((distance < self.nonzero_loss_cutoff).float()) + 1e-8
         weights_sum = torch.sum(weights, dim=1, keepdim=True)
         weights = weights / weights_sum
 
@@ -148,20 +153,17 @@ class   DistanceWeightedSampling(nn.Module):
         n_indices = []
 
         np_weights = weights.cpu().numpy()
+
         for i in range(n):
             block_idx = i // k
 
             if weights_sum[i] != 0:
-                n_indices +=  np.random.choice(n, k-1, p=np_weights[i]).tolist()
+                n_indices += np.random.choice(n, k - 1, p=np_weights[i]).tolist()
             else:
-                n_indices +=  np.random.choice(n, k-1, p=mask_uniform_probs[i]).tolist()
-            for j in range(block_idx * k, (block_idx + 1)*k):
+                n_indices += np.random.choice(n, k - 1, p=mask_uniform_probs[i]).tolist()
+            for j in range(block_idx * k, (block_idx + 1) * k):
                 if j != i:
                     a_indices.append(i)
                     p_indices.append(j)
 
-        return  a_indices, x[a_indices], x[p_indices], x[n_indices], x
-
-
-
-
+        return a_indices, x[a_indices], x[p_indices], x[n_indices], x

@@ -1,11 +1,13 @@
 python train.py \
         --workers 8 \
-        --data-path path_to_dataset \
-        --feat-dim 1024 \
-        --classes 25 \
-        --batch-num 100 \
+        --data-path /data/sdv2/taobao/data/embedding \
+        --feat-dim 256 \
+        --classes 100 \
+        --batch-num 400 \
         --batch-size 50 \
         --batch-k 5 \
-        --gpus 0,1 \
+        --gpus 0,1,2,3 \
         --model resnet18 \
         --use-pretrained \
+        --epochs 80 \
+        --save-prefix distanceweighted
