@@ -21,7 +21,7 @@ import glob
 # DATA_ROOT = './datasets/xuelang_round1_test_a_20180709'
 # DATA_ROOT = './datasets/xuelang_round1_test_b'
 DATA_ROOT = '/data/sdv2/taobao/data/embedding/val/'
-RESULT_FILE = 'result.pkl'
+# RESULT_FILE = 'result.pkl'
 
 
 def test_and_generate_result(imgs,
@@ -31,7 +31,8 @@ def test_and_generate_result(imgs,
                              normalize=True,
                              ckpt_name='resnet101',
                              img_size=224,
-                             is_multi_gpu=False):
+                             is_multi_gpu=False,
+                             save_file=None):
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
     data_transform = transforms.Compose([
@@ -79,8 +80,9 @@ def test_and_generate_result(imgs,
         output = model.embed(img_tensor).detach().squeeze(0)
         embed_result.append(output.cpu().numpy().tolist())
 
-    with open(os.path.join('./results', RESULT_FILE), 'wb') as fd:
-        pickle.dump(embed_result, fd)
+    if save_file is not None:
+        with open(os.path.join('./results', save_file), 'wb') as fd:
+            pickle.dump(embed_result, fd)
     return embed_result
 
 def embed_match_eval(imgs, embed, embed_dim=256, k_nearest=3):
