@@ -12,6 +12,7 @@ from torch.optim import lr_scheduler
 from torchvision import transforms, models
 from model import *
 # import pretrainedmodels
+import faiss
 
 from resnet import *
 import pickle
@@ -80,9 +81,46 @@ def test_and_generate_result(imgs,
 
     with open(os.path.join('./results', RESULT_FILE), 'wb') as fd:
         pickle.dump(embed_result, fd)
+    return embed_result
 
+def embed_match_eval(imgs, embed, embed_dim=256, k_nearest=3):
+    Index = faiss.IndexFlatL2(embed_dim)
+    embed_ = np.array(embed).astype('float32')
+    # Index.add(embed_)
+    categories = np.array([img.split('/')[-2] for img in imgs])
+    images = np.array([img.split('/')[-1] for img in imgs])
+    total_result = []
+    gallery_cate = []
+    gallery_imgs = []
+    for cate, emb, img in zip(*(categories, embed_, images)):
+        emb = np.array(emb).astype('float32')
+        emb = emb[np.newaxis, :]
+        if not img.startswith('v'):
+            Index.add(emb)
+            gallery_cate.append(cate)
+            gallery_imgs.append(img)
+
+    gallery_cate = np.array(gallery_cate)
+    gallery_imgs = np.array(gallery_imgs)
+
+    for cate, emb, img in zip(*(categories, embed_, images)):
+        emb = np.array(emb).astype('float32')
+        emb = emb[np.newaxis, :]
+        if img.startswith('v'):
+            D, I = Index.search(emb, k_nearest)
+            real_idx = np.squeeze(I)
+            result = gallery_cate[real_idx] == cate
+            if isinstance(result, bool):
+                result = [result]
+            else:
+                result = result.tolist()
+            total_result.extend(result)
+            print(img, gallery_imgs[real_idx][gallery_cate[real_idx] != cate])
+    acc = np.sum(total_result) / len(total_result)
+    print('accuracy: {:.2f}%'.format(acc*100))
 
 
 if __name__ == '__main__':
     imgs = glob.glob(os.path.join(DATA_ROOT, '*/*.jpg'))
-    test_and_generate_result(imgs, 1024, 256, 5, ckpt_name='/data/sdv2/taobao/embedding/checkpoints/deep_checkpoint_12.pth.tar')
+    embed = test_and_generate_result(imgs, 512, 128, 5, ckpt_name='/data/sdv2/taobao/embedding/checkpoints/normalize_checkpoint_12.pth.tar')
+    embed_match_eval(imgs, embed, 128, 1)
