@@ -67,6 +67,12 @@ class MarginNet(nn.Module):
         x = self.sampled(x)
         return x
 
+    def embed(self, x):
+        x = self.base_net(x)
+        x = self.dense(x)
+        x = self.normalize(x)
+        return x
+
 
 class MarginLoss(nn.Module):
     def __init__(self, margin=0.2, nu=0.0, weight=None, batch_axis=0, **kwargs):
