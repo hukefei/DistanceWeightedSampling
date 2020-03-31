@@ -124,5 +124,5 @@ def embed_match_eval(imgs, embed, embed_dim=256, k_nearest=3):
 
 if __name__ == '__main__':
     imgs = glob.glob(os.path.join(DATA_ROOT, '*/*.jpg'))
-    embed = test_and_generate_result(imgs, 512, 128, 5, ckpt_name='/data/sdv2/taobao/embedding/checkpoints/normalize_checkpoint_12.pth.tar')
-    embed_match_eval(imgs, embed, 128, 1)
+    embed = test_and_generate_result(imgs, 1024, 256, 5, ckpt_name='/data/sdv2/taobao/embedding/checkpoints/triplet_checkpoint_1.pth.tar')
+    embed_match_eval(imgs, embed, 256, 1)

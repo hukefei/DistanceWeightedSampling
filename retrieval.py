@@ -104,7 +104,7 @@ def gallery_results(imgs,
                         img_tensor = data_transform(cut_img).unsqueeze(0)
                         img_tensor = img_tensor.cuda()
                         output = embed_model.embed(img_tensor).detach().squeeze(0)
-                        output = output.cpu().numpy().tolist()
+                        output = output.cpu().numpy()
 
                         category_dict.setdefault(category_id, []).append(
                             [item_id] + [img_name] + list(bbox) + [output]
@@ -146,7 +146,7 @@ def single_video_query(video_imgs,
     frame_res = []
     for frame_index, img in video_imgs.items():
         result = inference_detector(model, img)
-        img_data = Image.open(img).convert('RGB')
+        img_data = Image.fromarray(img).convert('RGB')
         for idx, bboxes in enumerate(result):
             category_id = idx + 1
             if len(bboxes) != 0:
@@ -157,7 +157,7 @@ def single_video_query(video_imgs,
                         img_tensor = data_transform(cut_img).unsqueeze(0)
                         img_tensor = img_tensor.cuda()
                         output = model_embed.embed(img_tensor).detach().squeeze(0)
-                        output = output.cpu().numpy().tolist()
+                        output = output.cpu().numpy()
                         frame_res.append(
                             [frame_index] + [category_id] + list(bbox) + [output]
                         )
@@ -165,7 +165,11 @@ def single_video_query(video_imgs,
     item_id_lst = []
     for res in frame_res:
         query_embed = res[-1][np.newaxis, :].astype('float32')
-        gallerys = gallery_dict[res[1]]
+        gallerys = gallery_dict.get(res[1], [])
+        if gallerys == []:
+            print('gallery is empty for category {}'.format(res[1]))
+            for k, v in gallery_dict.items():
+                gallerys.extend(v)
         gallery_embeds = [lst[-1] for lst in gallerys]
         gallery_embeds = np.array(gallery_embeds).astype('float32')
 
@@ -227,8 +231,8 @@ def single_video_query(video_imgs,
     for frame, item in zip(best_frame_bbox, best_item_bbox):
         d = {
             "img_name": item[1],
-            "item_bbox": list(map(int, item[2:6])),
-            "frame_bbox": list(map(int, frame[2:6]))
+            "item_box": list(map(int, item[2:6])),
+            "frame_box": list(map(int, frame[2:6]))
         }
         result_lst.append(d)
     output = {
@@ -261,12 +265,14 @@ def bboxes_iou(boxes1, boxes2):
 
 
 if __name__ == '__main__':
-    imgs = glob.glob('/tcdata/test_dataset_3w/image/*/*.jpg')[:1000]
-    videos = glob.glob('/tcdata/test_dataset_3w/video/*.mp4')[:10]
+    # imgs = glob.glob('/tcdata/test_dataset_3w/image/*/*.jpg')[:1000]
+    # videos = glob.glob('/tcdata/test_dataset_3w/video/*.mp4')[:10]
+    imgs = glob.glob(r'/data/sdv2/taobao/data/val_3/image/*/*.jpg')
+    videos = glob.glob(r'/data/sdv2/taobao/data/val_3/video/*.mp4')
 
-    cfg = './taobao_configs/faster_rcnn_r50_fpn_triplet.py'
-    ckpt = './taobao_models/published-8429440b.pth'
-    ckpt_embed = r'/data/sdv2/taobao/embedding/checkpoints/normalize_checkpoint_12.pth.tar'
+    cfg = '/data/sdv2/taobao/mmdet_taobao/taobao_configs/fcos_r50_caffe_fpn_gn_1x_4gpu.py'
+    ckpt = '/data/sdv2/taobao/work_dirs/0330_detection/epoch_12.pth'
+    ckpt_embed = r'/data/sdv2/taobao/embedding/checkpoints/triplet_checkpoint_3.pth.tar'
 
     model = get_detection_model(cfg, ckpt)
     model_embed = get_embed_model(1024, 256, 5, ckpt_embed)
@@ -281,7 +287,7 @@ if __name__ == '__main__':
 
     print('\nPreparing gallery datasets...')
     st = time.time()
-    gallery_dict = gallery_results(imgs, model, score_thr=0.5,
+    gallery_dict = gallery_results(imgs, model, model_embed, score_thr=0.1, data_transform=data_transform,
                                    out_json='gallery_results.json')
     print('Total Cost Time: {}s'.format(time.time() - st))
     # with open('gallery_results.json', 'r') as f:
@@ -293,8 +299,8 @@ if __name__ == '__main__':
     for i, video in enumerate(videos):
         video_id, video_imgs = capture_video_imgs(video, interval=80)
         output = single_video_query(
-            video_imgs, gallery_dict, model,
-            score_thr=0.5, k_nearest=3, iou_thr=0.5
+            video_imgs, gallery_dict, model, model_embed, data_transform,
+            score_thr=0.1, k_nearest=3, iou_thr=0.5
         )
         final_result[video_id] = output
     print('Average Cost Time: {}s'.format((time.time() - st) / len(videos)))

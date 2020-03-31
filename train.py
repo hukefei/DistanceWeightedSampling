@@ -126,7 +126,12 @@ def main(args):
     print(model.state_dict().keys())
     model.cuda()
 
-    criterion = MarginLoss(margin=args['margin'], nu=args['nu'])
+    if args['loss'] == 'margin':
+        criterion = MarginLoss(margin=args['margin'], nu=args['nu'])
+    elif args['loss'] == 'triplet':
+        criterion = TripletLoss(margin=args['margin'], nu=args['nu'])
+    else:
+        raise NotImplementedError
 
     optimizer = torch.optim.SGD(model.parameters(), args['lr'], momentum=args['momentum'],
                                 weight_decay=args['wd'])
